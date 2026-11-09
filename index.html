@@ -8,7 +8,1160 @@
 // Если они подписываются на DOMContentLoaded/load, когда событие уже прошло — вызываем обработчик сами.
 (function(){
   function wrap(t){
-    var o=t.addEventListener;<!DOCTYPE html>
+    var o=t.addEventLi<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin>
+<script>try{var __d=localStorage.getItem('mvs_theme')==='dark',__r=document.documentElement;__r.style.background=__d?'#101820':'#e6f6ec';__r.style.colorScheme=__d?'dark':'light';}catch(e){}
+// Скрипты приложения запускаются ПОСЛЕ первой отрисовки заставки (см. загрузчик в конце body).
+// Если они подписываются на DOMContentLoaded/load, когда событие уже прошло — вызываем обработчик сами.
+(function(){
+  function wrap(t){
+    var o=t.addEventListener;
+    t.addEventListener=function(type,fn,opts){
+      if(window.__mvsRunning&&typeof fn==='function'&&((type==='DOMContentLoaded'&&document.readyState!=='loading')||(type==='load'&&document.readyState==='complete'))){
+        setTimeout(function(){try{fn.call(t,new Event(type))}catch(e){console.error(e)}},0);return;
+      }
+      return o.apply(this,arguments);
+    };
+  }
+  try{wrap(window);wrap(document);}catch(e){}
+})();
+</script>
+<script>
+// ─── Страховка от «белого экрана» ───
+// Если приложение не дошло до конца запуска за 6 секунд: один раз само чистит кэш и сервис-воркер
+// и перезагружается; если не помогло — показывает окно с причиной и кнопкой «Починить».
+// Данные приложения (localStorage) не затрагиваются.
+(function () {
+  var errs = [];
+  window.__appReady = false;
+  // ─── Журнал запусков для диагностики: последние 10 запусков в localStorage ───
+  var boot = { t: Date.now(), w: window.innerWidth, h: window.innerHeight, sw: !!(navigator.serviceWorker && navigator.serviceWorker.controller), vis: document.visibilityState, ol: navigator.onLine, nav: '' };
+  try {
+    var nv = performance.getEntriesByType('navigation')[0];
+    boot.nav = nv ? nv.type : '';
+    if (nv) {
+      boot.fb = Math.round(nv.responseStart);     // мс до первого байта страницы
+      boot.fe = Math.round(nv.responseEnd);       // мс до полной загрузки страницы (пока её нет — белый экран)
+      boot.wk = Math.round(nv.workerStart || 0);  // >0: страницу отдавал сервис-воркер
+      boot.tx = Math.round((nv.transferSize || 0) / 1000);  // КБ по сети (0 — из кэша)
+    }
+  } catch (e) {}
+  try { var _c = navigator.serviceWorker && navigator.serviceWorker.controller; boot.ctl = _c ? _c.scriptURL.split('/').pop().split('?')[0] : ''; } catch (e) {}
+  function bootSave() {
+    try {
+      var a = JSON.parse(localStorage.getItem('boot_log') || '[]');
+      var i = -1; for (var k = 0; k < a.length; k++) { if (a[k].t === boot.t) i = k; }
+      if (i >= 0) a[i] = boot; else a.push(boot);
+      while (a.length > 10) a.shift();
+      localStorage.setItem('boot_log', JSON.stringify(a));
+    } catch (e) {}
+  }
+  window.__bootNote = function (k, v) { boot[k] = v; bootSave(); };
+  window.__bootMark = function (name) { boot[name] = Date.now() - boot.t; boot[name + 'W'] = window.innerWidth; bootSave(); };
+  bootSave();
+  document.addEventListener('DOMContentLoaded', function () { window.__bootMark('dcl'); });
+  window.addEventListener('load', function () { window.__bootMark('load'); });
+  window.addEventListener('error', function (e) { if (errs.length < 5) errs.push(String(e.message || 'ошибка') + (e.lineno ? ' (стр. ' + e.lineno + ')' : '')); });
+  window.addEventListener('unhandledrejection', function (e) { if (errs.length < 5) errs.push('promise: ' + String((e.reason && e.reason.message) || e.reason)); });
+
+  function cleanUrl() { return location.href.split('#')[0].split('?')[0]; }
+  function heal() {
+    var go = function () { location.replace(cleanUrl() + '?r=' + Date.now()); };
+    var jobs = [];
+    try { if (navigator.serviceWorker) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })); } catch (e) {}
+    try { if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); })); } catch (e) {}
+    Promise.all(jobs).then(go, go);
+    setTimeout(go, 2500);
+  }
+  function showOverlay() {
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483647;background:#101820;color:#fff;font-family:system-ui,sans-serif;padding:32px 22px;overflow:auto;text-align:center;';
+    var h = document.createElement('div'); h.style.cssText = 'font-size:44px;margin-top:20px'; h.textContent = '⚠️';
+    var t = document.createElement('div'); t.style.cssText = 'font-size:20px;font-weight:700;margin:12px 0 8px'; t.textContent = 'Приложение запустилось не полностью';
+    var p = document.createElement('div'); p.style.cssText = 'font-size:14px;opacity:.75;line-height:1.5;margin-bottom:14px'; p.textContent = 'Твои данные на месте. Нажми «Починить» — страница загрузится заново, начисто.';
+    var pre = document.createElement('div'); pre.style.cssText = 'font-size:12px;text-align:left;background:rgba(255,255,255,.08);border-radius:10px;padding:10px 12px;margin:0 0 18px;word-break:break-word;white-space:pre-wrap;';
+    pre.textContent = errs.length ? errs.join('\n') : 'Ошибок JavaScript нет — страница, скорее всего, пришла из кэша неполной.';
+    function btn(label, bg, fn) { var b = document.createElement('button'); b.textContent = label; b.style.cssText = 'display:block;width:100%;padding:15px;margin:0 0 10px;border:0;border-radius:12px;font-size:16px;font-weight:700;color:#fff;background:' + bg + ';'; b.onclick = fn; return b; }
+    d.appendChild(h); d.appendChild(t); d.appendChild(p); d.appendChild(pre);
+    d.appendChild(btn('Починить и перезапустить', '#27ae60', heal));
+    d.appendChild(btn('Просто перезагрузить', '#34495e', function () { location.reload(); }));
+    (document.body || document.documentElement).appendChild(d);
+  }
+  window.__healApp = heal;
+  // сигнал воркеру «страница жива» (иначе он решит, что экран белый, и перезагрузит страницу)
+  function pingAlive() {
+    try {
+      if (!navigator.serviceWorker) return;
+      var send = function (sw) { if (sw) sw.postMessage({ type: 'alive' }); };
+      if (navigator.serviceWorker.controller) send(navigator.serviceWorker.controller);
+      navigator.serviceWorker.ready.then(function (reg) { send(navigator.serviceWorker.controller || reg.active); });
+    } catch (e) {}
+  }
+  pingAlive();
+  setTimeout(pingAlive, 1500);
+  // воркер сообщает, что на сервере лежит новая версия (страница открывается из кэша мгновенно, а обновляется фоном)
+  function curBuild() { try { return JSON.parse(document.getElementById('mvs-changelog').textContent).build | 0; } catch (e) { return 0; } }
+  function parseLog(html) {
+    var m = /<script[^>]*id=["']mvs-changelog["'][^>]*>([\s\S]*?)<\/script>/.exec(html || '');
+    if (!m) return null;
+    try { return JSON.parse(m[1]); } catch (e) { return null; }
+  }
+  function loadLog(u) { return fetch(u, { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : ''; }).then(parseLog).catch(function () { return null; }); }
+  // список изменений берём из НОВОЙ версии страницы (запущенная версия о ней ещё не знает)
+  function loadNewLog() {
+    return loadLog(cleanUrl()).then(function (j) {
+      if (j && (j.build | 0) > curBuild()) return j;
+      return loadLog(cleanUrl() + '?chg=' + Date.now()).then(function (j2) { return j2 || j; });
+    });
+  }
+  function changeLines(j) {
+    var cur = curBuild(), out = [];
+    if (j && j.history) j.history.forEach(function (h) { if ((h.build | 0) > cur) (h.items || []).forEach(function (t) { out.push(String(t)); }); });
+    return out;
+  }
+  function showUpdateBanner() {
+    var plain = 'Загружено в фоне. Обнови, когда удобно.';
+    loadNewLog().then(function (j) {
+      var lines = changeLines(j), sub = plain;
+      if (lines.length) {
+        var shown = lines.slice(0, 4).map(function (t) { return '• ' + t; });
+        if (lines.length > 4) shown.push('…и ещё ' + (lines.length - 4));
+        sub = shown.join('\n') + '\n\nЗагружено в фоне. Обнови, когда удобно.';
+      }
+      return { title: 'Доступно обновление' + (j && j.label && lines.length ? ' ' + j.label : ''), sub: sub, seen: (j && lines.length) ? (j.build | 0) : 0 };
+    }, function () { return { title: 'Доступно обновление', sub: plain, seen: 0 }; }).then(function (t) {
+      try { iosBanner({ title: t.title, sub: t.sub, icon: '⬆️', kind: 'info', sticky: true, actions: [{ label: 'Обновить', primary: true, fn: function () {
+        // список уже показан в баннере — после перезапуска окно «Что нового» не повторяем
+        try { if (t.seen) localStorage.setItem('mvs_seen_build', String(t.seen)); } catch (e) {}
+        location.reload();
+      } }, { label: 'Позже' }] }); } catch (x) {}
+    });
+  }
+  try {
+    if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', function (e) {
+      if (!e.data || e.data.type !== 'updated') return;
+      var n = 0, t = setInterval(function () {
+        if (typeof iosBanner === 'function') { clearInterval(t); showUpdateBanner(); }
+        else if (++n > 40) clearInterval(t);
+      }, 500);
+    });
+  } catch (e) {}
+  var __wd = 0;
+  setTimeout(function wd() {
+    if (window.__appReady) return;
+    // страница ещё читается (холодный первый запуск в APK медленный) — не «лечим», ждём до 30 с
+    if (document.readyState === 'loading' && __wd++ < 3) { setTimeout(wd, 5000); return; }
+    var tried = null;
+    try { tried = sessionStorage.getItem('mvs_autoheal'); } catch (e) {}
+    if (!tried) { try { sessionStorage.setItem('mvs_autoheal', '1'); } catch (e) {} heal(); return; }
+    showOverlay();
+  }, 15000);
+})();
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>МВС отчёты</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#101820">
+<!-- Подключение DaData для подсказок адресов (локально) -->
+</head>
+<body class="tab-4">
+<script type="application/json" id="mvs-changelog">
+{"build":32,"label":"v32","history":[
+ {"build":32,"items":["В большой карточке внизу появился аккордеон «Список продуктов»: те же продукты и счётчики, что в разделе «Сегодня»"]},
+ {"build":31,"items":["Скрипты приложения разбиты на отдельные файлы (папка js/): обновления теперь скачивают только изменённые файлы"]},
+ {"build":30,"items":["Приложение разбито на части: стили вынесены в отдельный файл app.v30.css, добавлен новый воркер sw8.js (быстрее и надёжнее обновления)"]},
+ {"build":29,"items":["Тап по маркеру на карте открывает большую карточку встречи","Кнопка «Добавить встречи в слот» показывается только с 06:00 до 10:00"]},
+ {"build":28,"items":["Выезжающая карточка: при переходе на «Карту» она сама плавно уезжает обратно"]},
+ {"build":27,"items":["Выезжающая карточка: фон «жидкое стекло» (размытие, блики, мягкие цветные пятна)"]},
+ {"build":26,"items":["Тап по короткой карточке: большая карточка плавно выезжает справа, свайп вправо или «Назад» возвращает её (можно выключить в «Настройках»)"]},
+ {"build":25,"items":["Окно редактирования причины в карточке: убрана кнопка «Причины» с аккордеоном (список причин теперь в самой карточке)"]},
+ {"build":24,"items":["Кнопка «Причина недоставки»: оранжевая, пока причины нет, красная — когда причина выбрана"]},
+ {"build":23,"items":["Кнопка «Причина недоставки» в карточке: красная, как «ФД обычная», без значка-треугольника"]},
+ {"build":22,"items":["Кнопка «Причина недоставки» в карточке снова компактная, в одну строку"]},
+ {"build":21,"items":["Карточка активности: кнопка «Причина недоставки», пока причина пуста, раскрывает список причин — выбор одним тапом","Экран «Сегодня»: блок «Причины не доставок» вернул прежний вид (аккордеон из v20 убран)"]},
+ {"build":20,"items":["Пробный аккордеон «Причины не доставок» на экране «Сегодня» (отменён в v21)"]},
+ {"build":19,"items":["Заметка и причина недоставки: первый тап по полю сам заново подключает клавиатуру (раньше приходилось тапать мимо и в поле)"]},
+ {"build":18,"items":["VPN-уведомление после смахивания или тапа молчит 10 минут","Проверка VPN и IP стала реже: раз в 10 минут вместо 3, без лишней второй проверки на старте"]},
+ {"build":17,"items":["Заставка: реакция на наклон телефона (включается в «Настройки» → «Наклон заставки»)"]},
+ {"build":16,"items":["Заставка: живой фон (плывущие круги и блик по стеклу), пульсирующая стрелка свайпа, вибрация на пороге отпускания"]},
+ {"build":15,"items":["Заставка: приветствие по времени суток, блок «Следующая встреча» и счётчик встреч дня","Заставка: цифры УП появляются сразу и плавно «досчитываются»"]},
+ {"build":14,"items":["Кнопка «Причины» (вместо «Все причины»); при раскрытии списка клавиатура убирается"]},
+ {"build":13,"items":["Причины недоставок: убраны отдельные кнопки, остался только аккордеон «Все причины»"]},
+ {"build":12,"items":["Причины недоставок: аккордеон «Все причины» с готовым списком (добавлены «Недозвон, полный адрес, встреча вечером», «Недозвон, адрес не полный», «Клиент сегодня не может, должен перенести»)"]},
+ {"build":11,"items":["Кнопки причин: Недозвон, Отказ клиента, Отмена клиентом, Клиент не в городе","Напоминание о незавершённой встрече приходит через 15 минут после «Начать»"]},
+ {"build":10,"items":["Быстрые причины недоставок: кнопки-подсказки в окне причины","Подсказка «Следующая встреча» и время до конца слота на экране «Активности»","Кнопка «🧭 Порядок» в слоте: адреса по карте в удобном порядке","Напоминание о незавершённой встрече"]},
+ {"build":9,"items":["Окно «Причины не доставок»: теперь можно печатать (как в «Заметке»)","После обновления один раз показывается окно «Что нового»"]},
+ {"build":8,"items":["В вечернем отчёте больше нет строки «Встреч не в слот»","Вечернее напоминание: «Отправь два вечерних отчёта», кнопки «Ок» и «Позже»"]},
+ {"build":7,"items":["Уведомление об обновлении теперь показывает, что именно изменилось"]},
+ {"build":6,"items":["Уведомление про VPN можно смахнуть: вверх, влево, вправо или тапом"]},
+ {"build":5,"items":["В окошке маркера на карте теперь полный адрес, как в карточке"]}
+]}
+</script>
+<style id="mvs-liquid-splash-style">
+#mvsLiquidSplash{position:fixed;inset:0;z-index:999999;display:flex;align-items:center;justify-content:center;padding:24px;overflow:hidden;background:radial-gradient(ellipse at 15% 15%,rgba(65,190,120,.24),transparent 42%),radial-gradient(ellipse at 85% 80%,rgba(15,150,85,.20),transparent 45%),linear-gradient(145deg,rgba(220,255,232,.34) 0%,rgba(190,245,210,.25) 48%,rgba(225,255,235,.30) 100%);backdrop-filter:blur(5px) saturate(125%);-webkit-backdrop-filter:blur(5px) saturate(125%);color:#26364a;transition:transform 1.05s cubic-bezier(.16,1,.3,1),opacity .95s cubic-bezier(.16,1,.3,1),border-radius 1.05s cubic-bezier(.16,1,.3,1),filter .95s cubic-bezier(.16,1,.3,1);touch-action:none;will-change:transform,opacity;transform-origin:50% 50%;transform:translate3d(0,var(--mls-drag-y,0px),0)}
+#mvsLiquidSplash:before,#mvsLiquidSplash:after{content:"";position:absolute;border-radius:50%;filter:blur(2px);pointer-events:none}
+#mvsLiquidSplash:before{width:62vw;height:62vw;max-width:420px;max-height:420px;left:-18%;top:-10%;background:linear-gradient(135deg,#ffffff88,#9ccdf044);border:1px solid #ffffff88}
+#mvsLiquidSplash:after{width:72vw;height:72vw;max-width:480px;max-height:480px;right:-24%;bottom:-16%;background:linear-gradient(135deg,#ffffff77,#bd8ce544);border:1px solid #ffffff80}
+#mvsLiquidSplash .mls-card{position:relative;z-index:1;width:min(100%,440px);padding:28px 22px 24px;border:1px solid #ffffffb8;border-radius:32px;background:linear-gradient(135deg,rgba(226,255,235,.78),rgba(196,245,214,.52));box-shadow:0 24px 70px rgba(25,100,55,.18),inset 0 1px 0 #ffffffd9;backdrop-filter:blur(28px) saturate(150%);-webkit-backdrop-filter:blur(28px) saturate(150%);text-align:center}
+#mvsLiquidSplash .mls-logo{font-size:14px;font-weight:800;letter-spacing:.28em;color:#26784b;margin-bottom:18px}
+#mvsLiquidSplash .mls-sber{font-size:clamp(38px,11vw,58px);line-height:1;font-weight:950;letter-spacing:.04em;color:#159447;margin:0 0 14px;text-shadow:0 2px 0 rgba(255,255,255,.7)}
+#mvsLiquidSplash .mls-title{font-size:clamp(30px,8vw,42px);line-height:1.1;font-weight:850;letter-spacing:-.04em;margin:0 0 8px}
+#mvsLiquidSplash .mls-date{font-size:14px;color:#66788b;margin-bottom:24px}
+#mvsLiquidSplash .mls-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 20px}
+#mvsLiquidSplash .mls-stat{padding:18px 12px;border:1px solid #ffffffc7;border-radius:22px;background:#ffffff75;box-shadow:inset 0 1px 0 #fff}
+#mvsLiquidSplash .mls-stat-num{font-size:clamp(28px,7vw,38px);font-weight:850;line-height:1.1;color:#168746}
+#mvsLiquidSplash .mls-stat:nth-child(2) .mls-stat-num{color:#278a53}
+#mvsLiquidSplash .mls-stat-label{font-size:13px;font-weight:650;color:#596b7e;margin-top:8px}
+#mvsLiquidSplash .mls-hint{font-size:14px;color:#536d86;margin-top:12px}
+#mvsLiquidSplash .mls-next{margin:0 0 16px;padding:12px 14px;border:1px solid #ffffffc7;border-radius:18px;background:#ffffff66;box-shadow:inset 0 1px 0 #fff;text-align:left}
+#mvsLiquidSplash .mls-next-1{font-size:15px;font-weight:800;line-height:1.25;color:#1f4d36;overflow-wrap:anywhere}
+#mvsLiquidSplash .mls-next-2{font-size:13px;font-weight:600;color:#596b7e;margin-top:3px;line-height:1.3}
+/* живой фон: только transform/opacity, без перерисовки */
+@keyframes mlsDriftA{0%{transform:translate3d(0,0,0) scale(1)}100%{transform:translate3d(9vw,6vh,0) scale(1.1)}}
+@keyframes mlsDriftB{0%{transform:translate3d(0,0,0) scale(1)}100%{transform:translate3d(-8vw,-5vh,0) scale(1.12)}}
+@keyframes mlsSheen{0%,48%{transform:translate3d(-130%,0,0) skewX(-18deg)}82%,100%{transform:translate3d(440%,0,0) skewX(-18deg)}}
+@keyframes mlsChev{0%,100%{transform:translateY(3px);opacity:.35}50%{transform:translateY(-4px);opacity:1}}
+#mvsLiquidSplash{--tx:0;--ty:0}
+#mvsLiquidSplash:before{translate:calc(var(--tx) * 26px) calc(var(--ty) * 26px)}
+#mvsLiquidSplash:after{translate:calc(var(--tx) * -20px) calc(var(--ty) * -20px)}
+#mvsLiquidSplash .mls-card{translate:calc(var(--tx) * 7px) calc(var(--ty) * 7px)}
+#mvsLiquidSplash:before{animation:mlsDriftA 11s ease-in-out infinite alternate}
+#mvsLiquidSplash:after{animation:mlsDriftB 13s ease-in-out infinite alternate}
+#mvsLiquidSplash .mls-card{overflow:hidden}
+#mvsLiquidSplash .mls-card:before{content:"";position:absolute;top:0;bottom:0;left:0;width:34%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.6),transparent);opacity:.6;pointer-events:none;will-change:transform;animation:mlsSheen 7s ease-in-out infinite}
+#mvsLiquidSplash .mls-chev{display:block;margin:0 auto 6px;color:#26784b;animation:mlsChev 1.7s ease-in-out infinite}
+#mvsLiquidSplash.mls-dragging:before,#mvsLiquidSplash.mls-dragging:after,#mvsLiquidSplash.mls-dragging .mls-card:before,#mvsLiquidSplash.mls-dragging .mls-chev,
+#mvsLiquidSplash.mls-paused:before,#mvsLiquidSplash.mls-paused:after,#mvsLiquidSplash.mls-paused .mls-card:before,#mvsLiquidSplash.mls-paused .mls-chev{animation-play-state:paused}
+#mvsLiquidSplash.mls-lite:before,#mvsLiquidSplash.mls-lite:after,#mvsLiquidSplash.mls-lite .mls-card:before{animation:none}
+@media(prefers-reduced-motion:reduce){
+  #mvsLiquidSplash:before,#mvsLiquidSplash:after,#mvsLiquidSplash .mls-card:before,#mvsLiquidSplash .mls-chev{animation:none}
+  #mvsLiquidSplash .mls-card:before{display:none}
+}
+@media(max-height:740px){
+  #mvsLiquidSplash{padding:14px}
+  #mvsLiquidSplash .mls-card{padding:18px 16px 16px}
+  #mvsLiquidSplash .mls-sber{margin-bottom:6px}
+  #mvsLiquidSplash .mls-logo{margin-bottom:10px}
+  #mvsLiquidSplash .mls-date{margin-bottom:14px}
+  #mvsLiquidSplash .mls-stats{gap:8px;margin-bottom:12px}
+  #mvsLiquidSplash .mls-stat{padding:12px 8px}
+  #mvsLiquidSplash .mls-stat-label{margin-top:4px}
+  #mvsLiquidSplash .mls-next{margin-bottom:12px;padding:10px 12px}
+}
+#mvsLiquidSplash .mls-open{appearance:none;border:1px solid #ffffffb8;border-radius:999px;padding:14px 24px;width:100%;font:inherit;font-weight:750;color:#fff;background:linear-gradient(110deg,#159447,#35b86b);box-shadow:0 10px 24px #6b80ac40;cursor:pointer}
+#mvsLiquidSplash.mls-dragging{transition:none!important}
+#mvsLiquidSplash.mls-dragging .mls-card{transition:none!important}
+#mvsLiquidSplash.mls-hide{opacity:0;transform:translate3d(0,-108%,0) scale(.94);border-radius:0 0 42px 42px;filter:blur(8px);pointer-events:none;box-shadow:0 30px 90px #24384c55}
+#mvsLiquidSplash .mls-card{transition:transform 1.05s cubic-bezier(.16,1,.3,1),opacity .85s cubic-bezier(.16,1,.3,1),filter .9s cubic-bezier(.16,1,.3,1)}
+#mvsLiquidSplash.mls-hide .mls-card{transform:translate3d(0,-28px,0) scale(.96);opacity:.45;filter:blur(3px)}
+#mvsLiquidSplash .mls-open{transition:transform .18s ease,box-shadow .18s ease}
+#mvsLiquidSplash .mls-open:active{transform:scale(.97)}
+#mvsLiquidSplash:before,#mvsLiquidSplash:after{transition:transform 1.05s cubic-bezier(.16,1,.3,1),opacity .9s cubic-bezier(.16,1,.3,1)}
+#mvsLiquidSplash.mls-hide:before{transform:translate3d(-8vw,-18vh,0) scale(.8);opacity:0}
+#mvsLiquidSplash.mls-hide:after{transform:translate3d(8vw,18vh,0) scale(.8);opacity:0}
+@media(prefers-reduced-motion:reduce){#mvsLiquidSplash{transition:none}}
+body.mvs-splash-open{overflow:hidden}
+
+</style>
+
+
+
+<style id="mvs-map-placeholder">
+#mapView{background:#e6ebf0}
+body.dark #mapView{background:#18222d}
+#mapView:not(.leaflet-container)::before{content:"🗺 Загружаем карту…";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#6b7c8d;font:600 15px/1.3 system-ui,-apple-system,sans-serif;animation:mvsMapPulse 1.4s ease-in-out infinite}
+#mapView[data-fail]:not(.leaflet-container)::before{content:"⚠️ Карта недоступна — нет интернета";animation:none}
+@keyframes mvsMapPulse{50%{opacity:.45}}
+</style>
+<style id="mvs-splash-v2">
+#mvsLiquidSplash{touch-action:none;-webkit-user-select:none;user-select:none;will-change:transform,opacity}
+#mvsLiquidSplash .mls-hint{animation:mlsHint 1.9s ease-in-out infinite}
+@keyframes mlsHint{0%,100%{transform:translateY(0);opacity:.75}50%{transform:translateY(-5px);opacity:1}}
+/* «Подпрыгивание» элементов после разблокировки, как иконки на iPhone */
+@keyframes mvsPop{
+  0%{opacity:0;transform:translate3d(0,28px,0) scale(.55)}
+  55%{opacity:1;transform:translate3d(0,-7px,0) scale(1.1)}
+  78%{transform:translate3d(0,2px,0) scale(.97)}
+  100%{opacity:1;transform:translate3d(0,0,0) scale(1)}
+}
+body.mvs-reveal #screen4 .route-stat,
+body.mvs-reveal #screen4 .slot-btn,
+body.mvs-reveal #screen4 .route-time-header,
+body.mvs-reveal #screen4 .route-card,
+body.mvs-reveal #bottomBar .bb-item{
+  animation:mvsPop .75s cubic-bezier(.2,.9,.3,1) both;
+  animation-delay:calc(var(--rv,0) * 45ms + 80ms);
+}
+@media(prefers-reduced-motion:reduce){
+  body.mvs-reveal #screen4 .route-stat,body.mvs-reveal #screen4 .slot-btn,body.mvs-reveal #screen4 .route-time-header,body.mvs-reveal #screen4 .route-card,body.mvs-reveal #bottomBar .bb-item{animation:none}
+}
+</style>
+<div id="mvsLiquidSplash" role="dialog" aria-label="Заставка МВС">
+  <div class="mls-card">
+    <div class="mls-sber">СБЕР</div><div class="mls-logo">МВС · WORKSPACE</div>
+    <h1 class="mls-title" id="mlsTitle">Твой рабочий день</h1>
+    <div class="mls-date" id="mlsDate"></div>
+    <div class="mls-stats">
+      <div class="mls-stat"><div class="mls-stat-num" id="mlsDailyUP">—</div><div class="mls-stat-label">УП выполнено за день</div></div>
+      <div class="mls-stat"><div class="mls-stat-num" id="mlsDailyFD">—</div><div class="mls-stat-label">УП на ФД</div></div>
+    </div>
+    <div class="mls-next" id="mlsNext" style="display:none"><div class="mls-next-1" id="mlsNext1"></div><div class="mls-next-2" id="mlsNext2"></div></div>
+    <button type="button" class="mls-open" id="mlsOpenBtn">Открыть МВС ↑</button>
+    <div class="mls-hint"><svg class="mls-chev" viewBox="0 0 26 14" width="26" height="14" aria-hidden="true"><path d="M2.5 11.5 L13 3 L23.5 11.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Свайпни вверх, чтобы продолжить</div>
+  </div>
+</div>
+
+
+
+<link rel="stylesheet" href="./app.v31.css">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="screens-viewport" id="screensViewport">
+  <div class="screens-track" id="screensTrack">
+
+    <div class="screen" id="screen1">
+  <div class="screen-date-bar">
+    <span class="work-timer" id="workTimer1">09:00</span>
+    <span class="short-date" id="shortDate1"></span>
+  </div>
+  <div id="app1"></div>
+</div>
+
+    <div class="screen" id="screen2">
+      <div class="r2-header">
+        <div class="r2-header-left"><div><h1>📊 МВС</h1><div class="date" id="todayDate2"></div></div></div>
+        <div class="r2-header-right">
+          <button class="menu-btn" id="menuBtn2">⋮</button>
+        </div>
+      </div>
+      <div id="app2"></div>
+    </div>
+
+    <div class="screen" id="screen3">
+      <div class="r1-header">
+        <div class="r1-header-left"><div><h1>📈 Итоги</h1><div class="date" id="todayDate3"></div></div></div>
+        <div class="r2-header-right">
+          <button class="menu-btn" id="menuBtn3">⋮</button>
+        </div>
+      </div>
+      <div id="app3"></div>
+    </div>
+
+    <div class="screen active" id="screen4">
+  <div id="app4"></div>
+</div>
+
+    <div class="screen" id="screen5">
+      <div class="map-header">
+  <div>
+    <div class="map-title">🗺 Карта</div>
+    <div class="map-subtitle" id="mapCityLabel">Определяем город…</div>
+  </div>
+  <div class="map-counter" id="mapCounter">0 / 0</div>
+  <button class="map-locate-btn" id="mapLocateBtn" title="Моё местоположение">◎</button>
+</div>
+      <div class="map-toolbar">
+        <button class="map-filter active" data-map-filter="all">Все</button>
+        <button class="map-filter" data-map-filter="t10_12">10–12</button>
+        <button class="map-filter" data-map-filter="t12_14">12–14</button>
+        <button class="map-filter" data-map-filter="t14_16">14–16</button>
+        <button class="map-filter" data-map-filter="t16_18">16–18</button>
+      </div>
+      <div id="mapView"></div>
+      <div class="map-bottom-card" id="mapInfoCard">
+        <div class="map-info-main"><span class="map-info-dot"></span><span id="mapInfoText">Выберите точку на карте</span></div>
+        <div class="map-info-count" id="mapInfoCount">0</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="r1-totals" id="r1Totals">
+  <div class="item"><div class="label">УП</div><div class="num" id="totalUP1">0.00</div></div>
+  <div class="item"><div class="label">ОД</div><div class="num" id="totalOD1">0</div></div>
+  <div class="item"><div class="label">УП/ФД</div><div class="num" id="totalUPFD1">0.00</div></div>
+  <div class="item"><div class="label">B2C</div><div class="num" id="totalB2C1">0/0</div></div>
+  <div class="item"><div class="label">B2B</div><div class="num" id="totalB2B1">0/0</div></div>
+</div>
+
+
+<div class="bottom-bar" id="bottomBar">
+  <button class="bb-item active" data-bb-tab="4">
+    <span class="bb-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+        <circle cx="12" cy="10" r="3"/>
+      </svg>
+    </span>
+    <span class="bb-text">Активности</span>
+  </button>
+ <button class="bb-item" data-bb-tab="1">
+  <span class="bb-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="17" rx="3"/>
+      <path d="M16 2v4M8 2v4M3 9h18"/>
+      <path d="M16 13.5l1.5 1.5L21 11.5"/>
+    </svg>
+  </span>
+  <span class="bb-text">Сегодня</span>
+</button>
+  <button class="bb-item bb-map" data-bb-tab="5" aria-label="Карта">
+  <span class="bb-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22s-7-5-7-12a7 7 0 0 1 14 0c0 7-7 12-7 12z"/>
+      <circle cx="12" cy="10" r="2.5"/>
+      <path d="M3 18c1.5-1 3.5-1 5 0" opacity="0.5"/>
+      <path d="M21 18c-1.5-1-3.5-1-5 0" opacity="0.5"/>
+    </svg>
+  </span>
+  <span class="bb-text">Карта</span>
+</button>
+  <button class="bb-item" data-bb-tab="2">
+    <span class="bb-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="3" y1="21" x2="21" y2="21"/>
+        <rect x="5" y="12" width="3" height="9" rx="0.5"/>
+        <rect x="10.5" y="7" width="3" height="14" rx="0.5"/>
+        <rect x="16" y="3" width="3" height="18" rx="0.5"/>
+      </svg>
+    </span>
+   <span class="bb-text">MBC ЗАПАД</span>
+  </button>
+  <button class="bb-item" data-bb-tab="3">
+    <span class="bb-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 17 9 11 13 15 21 7"/>
+        <polyline points="14 7 21 7 21 14"/>
+      </svg>
+    </span>
+    <span class="bb-text">Итоги</span>
+  </button>
+</div>
+
+<div class="menu" id="menu2">
+  <button id="btnNewMonth2">🆕 Новый месяц (обнулить всё)</button>
+</div>
+
+<div class="menu" id="menu3">
+  <button id="btnOpenCityModal" style="color:#2980b9;">🏙 Мой город</button>
+  <button id="btnDaDataKey" style="color:#2980b9;">🔑 Ключ DaData (подсказки адресов)</button>
+  <button id="btnOpenRoutePoints" style="color:#00897b;">🚗 Начальная и конечная точка</button>
+  <button id="btnOpenFuel" style="color:#e67e22;">⛽ Расход бензина</button>
+  <button id="btnOpenMaxGroups" style="color:#6c5ce7;">💬 Группы в MAX</button>
+  <button id="btnToggleTheme">🌙 Сменить тему</button>
+  <button id="btnSplashTilt" style="color:#16a085;">🌀 Наклон заставки: выкл</button>
+  <button id="btnCardSheet" style="color:#2980b9;">🗂 Карточка справа: вкл</button>
+  <button id="btnResetTotalsMenu">🗑 Сбросить итоги за месяц</button>
+  <button id="btnFixDupHistory">🔧 Исправить дубли в истории</button>
+  <button id="btnExportData" style="color:#27ae60;">💾 Сохранить данные</button>
+  <button id="btnImportData" style="color:#2980b9;">📂 Загрузить данные</button>
+  <button id="btnClearMapCache" onclick="window.__clearMapCache && window.__clearMapCache()" style="color:#e67e22;">🗺 Очистить кэш карты</button>  <button id="btnBootLog" style="color:#8e44ad;">🧪 Диагностика запуска</button>
+</div>
+
+<div id="daDataKeyModal" class="modal" style="display:none;position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:20px;">
+  <div style="width:min(460px,100%);background:var(--card-bg,#fff);color:var(--text-color,#223);border-radius:16px;padding:20px;box-shadow:0 15px 50px #0004;">
+    <div style="font-size:18px;font-weight:700;margin-bottom:8px;">🔑 Ключ DaData</div>
+    <div style="font-size:13px;opacity:.8;margin-bottom:12px;">Ключ сохраняется в этом браузере на вашем устройстве. Не публикуйте его в репозитории.</div>
+    <input id="daDataKeyInput" type="password" autocomplete="off" placeholder="Вставьте API-ключ DaData" style="box-sizing:border-box;width:100%;padding:12px;border:1px solid #aab7c0;border-radius:10px;margin-bottom:12px;">
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+      <button id="daDataKeyCancel" type="button">Отмена</button><button id="daDataKeyClear" type="button">Удалить ключ</button><button id="daDataKeySave" type="button">Сохранить</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="status-overlay" id="statusOverlay"></div>
+<div class="status-menu" id="statusMenu"></div>
+
+<div class="success-notification" id="successNotif">
+  <div class="success-notif-rocket">
+    <span class="rocket-emoji">🚀</span>
+    <span class="rocket-smoke">
+      <span class="smoke-puff"></span>
+      <span class="smoke-puff"></span>
+      <span class="smoke-puff"></span>
+    </span>
+  </div>
+  <svg class="success-check" viewBox="0 0 52 52">
+    <circle class="check-circle" cx="26" cy="26" r="22" fill="none"/>
+    <path class="check-mark" fill="none" d="M14 27 L23 36 L38 18"/>
+  </svg>
+  <div class="success-text">Отчёт сформирован</div>
+</div>
+<div class="vpn-warning" id="vpnWarning">
+  <div class="vpn-warning-icon">📡</div>
+  <div class="vpn-warning-text">
+    <b>Выключи VPN</b>
+    <span>Выключи VPN, затем перезайди в приложение или обнови экран, потянув сверху вниз</span>
+  </div>
+</div>
+<div class="modal-overlay" id="reminderModal">
+  <div class="modal">
+    <div class="emoji">📋</div>
+    <h2>Вечерние отчёты</h2>
+    <p>Отправь два вечерних отчёта.</p>
+    <button id="btnCloseReminder">Ок, понял</button>
+  </div>
+</div>
+<div class="modal-overlay" id="morningReportModal">
+  <div class="modal">
+    <div class="emoji">⏰</div>
+    <h2>Отправь отчёт МВС</h2>
+    <p>Не забудь отправить утренний отчёт руководителю.</p>
+    <button id="btnCloseMorningReport">Ок, понял</button>
+  </div>
+</div>
+<div class="modal-overlay" id="quickReportModal">
+  <div class="quick-modal">
+    <h2>📋 Предварительный отчёт</h2>
+    <div class="quick-field"><label>УП план на день</label><input class="quick-input" id="qPlanDay" type="text" inputmode="decimal" placeholder="например, 3.4"></div>
+    <div class="quick-field"><label>B2C назначено встреч <span style="font-weight:400;color:#7b8794">(из Активностей, можно изменить)</span></label><input class="quick-input" id="qB2cNag" type="text" inputmode="numeric" placeholder="например, 6"></div>
+    <div class="quick-field"><label>B2B назначено встреч <span style="font-weight:400;color:#7b8794">(из Активностей, можно изменить)</span></label><input class="quick-input" id="qB2bNag" type="text" inputmode="numeric" placeholder="— если нет"></div>
+    <div class="quick-field"><label>B2C «точно будет сделано» <span style="font-weight:400;color:#7b8794">(проведены + ждут)</span></label><input class="quick-input" id="qWillDo" type="text" inputmode="numeric" placeholder="например, 12"></div>
+    <div class="quick-field"><label>B2B «точно будет сделано» <span style="font-weight:400;color:#7b8794">(проведены + ждут)</span></label><input class="quick-input" id="qWillDoB2B" type="text" inputmode="numeric" placeholder="например, 5"></div>
+    <div class="quick-field"><label>ФД, которые не состоятся (заметки)</label><textarea class="quick-textarea" id="qFdNotes" placeholder="Введите заметки по ФД, которые не состоятся..."></textarea></div>
+    <div class="quick-preview" id="qPreview">—</div>
+    <div class="quick-actions">
+      <button class="q-cancel" id="qCancel">Закрыть</button>
+      <button class="q-send" id="qSend">📋 Скопировать отчёт</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="salesModal">
+  <div class="sales-modal">
+    <div class="sales-modal-header">
+      <h2>📊 Продажи</h2>
+      <button class="sales-close" id="salesClose">✕</button>
+    </div>
+    <div class="sales-month-nav">
+      <button id="salesPrev">‹</button>
+      <div class="smn-title" id="salesMonthTitle">—</div>
+      <button id="salesNext">›</button>
+    </div>
+    <div id="salesBody"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="meetingsModal">
+  <div class="sales-modal">
+    <div class="sales-modal-header">
+      <h2>👥 B2C / B2B</h2>
+      <button class="sales-close" id="meetingsClose">✕</button>
+    </div>
+    <div class="sales-month-nav">
+      <button id="meetingsPrev">‹</button>
+      <div class="smn-title" id="meetingsMonthTitle">—</div>
+      <button id="meetingsNext">›</button>
+    </div>
+    <div id="meetingsBody"></div>
+  </div>
+</div>
+
+<!-- Модалка ввода координат -->
+<div class="modal-overlay" id="coordsModal">
+  <div class="modal" style="max-width: 360px;">
+    <div class="emoji">📍</div>
+    <h2 style="color:#27ae60;">Координаты адреса</h2>
+    <p style="color:#666;margin-bottom:14px;font-size:13px;line-height:1.5;">
+      Открой <b>Яндекс.Карты</b> → найди дом → долгий тап (или правый клик) → скопируй координаты.
+    </p>
+
+
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <div style="flex:1;">
+        <label style="display:block;font-size:12px;font-weight:600;color:#666;text-transform:uppercase;margin-bottom:4px;">Широта</label>
+        <input type="text" id="coordLat" class="quick-input" inputmode="decimal" placeholder="55.834567">
+      </div>
+      <div style="flex:1;">
+        <label style="display:block;font-size:12px;font-weight:600;color:#666;text-transform:uppercase;margin-bottom:4px;">Долгота</label>
+        <input type="text" id="coordLon" class="quick-input" inputmode="decimal" placeholder="37.345678">
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button id="coordsReset" style="flex:1;padding:13px;border:none;border-radius:10px;background:#fdecec;color:#c0392b;font-size:14px;font-weight:600;cursor:pointer;">🗑 Сбросить</button>
+      <button id="coordsSave" style="flex:2;padding:13px;border:none;border-radius:10px;background:#27ae60;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">✓ Сохранить</button>
+    </div>
+
+    <button id="coordsCancel" style="width:100%;margin-top:8px;padding:12px;border:none;border-radius:10px;background:#ecf0f1;color:#2c3e50;font-size:14px;font-weight:600;cursor:pointer;">Закрыть</button>
+  </div>
+</div>
+<!-- Модалка ввода города -->
+<div class="modal-overlay" id="cityModal">
+  <div class="modal" style="max-width: 360px;">
+    <div class="emoji">🏙</div>
+    <h2 style="color:#2980b9;">Мой город</h2>
+    <p style="color:#666;margin-bottom:14px;font-size:13px;line-height:1.5;">
+      Укажи город — он будет автоматически подставляться к адресам при построении маршрута и на карте.
+    </p>
+
+    <div style="text-align:left;margin-bottom:14px;">
+      <label style="display:block;font-size:12px;font-weight:600;color:#666;text-transform:uppercase;margin-bottom:4px;">Город</label>
+      <input type="text" id="cityModalInput" class="quick-input" placeholder="например, Красногорск" autocomplete="off">
+    </div>
+
+    <div style="display:flex;gap:8px;">
+      <button id="cityModalReset" style="flex:1;padding:13px;border:none;border-radius:10px;background:#fdecec;color:#c0392b;font-size:14px;font-weight:600;cursor:pointer;">🗑 Сбросить</button>
+      <button id="cityModalSave" style="flex:2;padding:13px;border:none;border-radius:10px;background:#27ae60;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">✓ Сохранить</button>
+    </div>
+
+    <button id="cityModalCancel" style="width:100%;margin-top:8px;padding:12px;border:none;border-radius:10px;background:#ecf0f1;color:#2c3e50;font-size:14px;font-weight:600;cursor:pointer;">Закрыть</button>
+  </div>
+</div>
+<!-- Модалка групп в MAX -->
+<div class="modal-overlay" id="maxGroupsModal">
+  <div class="modal" style="max-width: 360px;">
+    <div class="emoji">💬</div>
+    <h2 style="color:#6c5ce7;">Группы в MAX</h2>
+    <p style="color:#666;margin-bottom:14px;font-size:13px;line-height:1.5;">
+      Если у группы есть ссылка-приглашение (https://max.ru/…), вставь её — после копирования отчёта откроется эта группа. Если ссылки нет, включи «Поделиться»: после копирования откроется меню, где выбираешь MAX и группу.
+    </p>
+    <div style="text-align:left;margin-bottom:12px;">
+      <label style="display:block;font-size:12px;font-weight:600;color:#666;text-transform:uppercase;margin-bottom:4px;">Группа для утреннего отчёта</label>
+      <input type="url" id="mgMorning" class="quick-input" placeholder="https://max.ru/join/…" autocomplete="off">
+    </div>
+    <div style="text-align:left;margin-bottom:14px;">
+      <label style="display:block;font-size:12px;font-weight:600;color:#666;text-transform:uppercase;margin-bottom:4px;">Группа для вечернего отчёта</label>
+      <input type="url" id="mgEvening" class="quick-input" placeholder="https://max.ru/join/…" autocomplete="off">
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;text-align:left;margin:0 0 14px;font-size:14px;cursor:pointer;">
+      <input type="checkbox" id="mgShare" style="width:18px;height:18px;"> Меню «Поделиться» после копирования (если нет ссылки)
+    </label>
+    <button id="mgSave" style="width:100%;padding:13px;border:none;border-radius:10px;background:#6c5ce7;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">✓ Сохранить</button>
+    <button id="mgTestShare" style="width:100%;margin-top:8px;padding:12px;border:none;border-radius:10px;background:rgba(108,92,231,.12);color:#6c5ce7;font-size:14px;font-weight:600;cursor:pointer;">↗ Проверить «Поделиться»</button>
+    <button id="mgTest" style="width:100%;margin-top:8px;padding:12px;border:none;border-radius:10px;background:rgba(108,92,231,.12);color:#6c5ce7;font-size:14px;font-weight:600;cursor:pointer;">↗ Проверить утреннюю ссылку</button>
+    <button id="mgCancel" style="width:100%;margin-top:8px;padding:12px;border:none;border-radius:10px;background:#ecf0f1;color:#2c3e50;font-size:14px;font-weight:600;cursor:pointer;">Закрыть</button>
+  </div>
+</div>
+<!-- Модалка расхода бензина -->
+<div class="modal-overlay" id="fuelModal">
+  <div class="modal" style="max-width: 340px;">
+    <div class="emoji">⛽</div>
+    <h2 style="color:#e67e22;">Расход бензина</h2>
+    <p style="color:#666;margin-bottom:14px;font-size:13px;line-height:1.5;">Затраты считаются по километражу: км × расход ÷ 100 × цена литра.</p>
+    <div style="text-align:left;margin-bottom:12px;">
+      <label style="display:block;font-size:12px;font-weight:600;color:#666;text-transform:uppercase;margin-bottom:4px;">Расход, л на 100 км</label>
+      <input type="text" inputmode="decimal" id="fuelCons" class="quick-input" placeholder="например, 8,5" autocomplete="off">
+    </div>
+    <div style="text-align:left;margin-bottom:14px;">
+      <label style="display:block;font-size:12px;font-weight:600;color:#666;text-transform:uppercase;margin-bottom:4px;">Цена литра, ₽</label>
+      <input type="text" inputmode="decimal" id="fuelPrice" class="quick-input" placeholder="например, 56,5" autocomplete="off">
+    </div>
+    <button id="fuelSave" style="width:100%;padding:13px;border:none;border-radius:10px;background:#e67e22;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">✓ Сохранить</button>
+    <button id="fuelCancel" style="width:100%;margin-top:8px;padding:12px;border:none;border-radius:10px;background:#ecf0f1;color:#2c3e50;font-size:14px;font-weight:600;cursor:pointer;">Закрыть</button>
+  </div>
+</div>
+<!-- Модалка начальной и конечной точки маршрута -->
+<div class="modal-overlay" id="routePointsModal">
+  <div class="modal" style="max-width: 360px;">
+    <div class="emoji">🚗</div>
+    <h2 style="color:#00897b;">Точки маршрута</h2>
+    <p style="color:#666;margin-bottom:14px;font-size:13px;line-height:1.5;">
+      Километраж считается от начальной точки через все адреса дня до конечной. Пиши адрес вместе с городом.
+    </p>
+    <div style="text-align:left;margin-bottom:12px;">
+      <label style="display:block;font-size:12px;font-weight:600;color:#666;text-transform:uppercase;margin-bottom:4px;">Начальная точка (откуда выезжаешь)</label>
+      <input type="text" id="rpStart" class="quick-input" placeholder="например, Красногорск, ул. Ленина, 5" autocomplete="off">
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;text-align:left;margin:0 0 12px;font-size:14px;cursor:pointer;">
+      <input type="checkbox" id="rpSame" checked style="width:18px;height:18px;"> Конечная точка та же (вернулся домой)
+    </label>
+    <div id="rpEndWrap" style="display:none;text-align:left;margin-bottom:14px;">
+      <label style="display:block;font-size:12px;font-weight:600;color:#666;text-transform:uppercase;margin-bottom:4px;">Конечная точка (где закончил)</label>
+      <input type="text" id="rpEnd" class="quick-input" placeholder="например, Красногорск, ул. Мира, 10" autocomplete="off">
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button id="rpReset" style="flex:1;padding:13px;border:none;border-radius:10px;background:#fdecec;color:#c0392b;font-size:14px;font-weight:600;cursor:pointer;">🗑 Сбросить</button>
+      <button id="rpSave" style="flex:2;padding:13px;border:none;border-radius:10px;background:#00897b;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">✓ Сохранить</button>
+    </div>
+    <button id="rpCancel" style="width:100%;margin-top:8px;padding:12px;border:none;border-radius:10px;background:#ecf0f1;color:#2c3e50;font-size:14px;font-weight:600;cursor:pointer;">Закрыть</button>
+  </div>
+</div>
+<div class="modal-overlay" id="monthlyReportModal">
+  <div class="sales-modal monthly-report">
+    <div class="sales-modal-header">
+      <h2 id="monthlyTitle">📊 Анализ за месяц</h2>
+      <button class="sales-close" id="monthlyClose">✕</button>
+    </div>
+    <div id="monthlyBody"></div>
+    <div class="monthly-actions">
+      <button class="monthly-copy" id="monthlyCopy">📋 Скопировать отчёт</button>
+    </div>
+  </div>
+</div>
+
+<script type="text/plain" data-mvs-defer data-src="./js/00-helpers.v31.js" data-mvs-id="mvs-workday-helpers"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/01-card-sheet.v31.js" data-mvs-id="mvs-card-sheet"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/02-whats-new.v31.js" data-mvs-id="mvs-whats-new"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/10-core.v31.js" data-mvs-join="main"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/11-card.v32.js" data-mvs-join="main"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/12-route.v31.js" data-mvs-join="main"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/13-today.v31.js" data-mvs-join="main"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/14-fuel-groups.v31.js" data-mvs-join="main"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/15-month.v31.js" data-mvs-join="main"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/16-reminders-map.v31.js" data-mvs-join="main"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/17-timers.v31.js" data-mvs-join="main"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/20-sw-register.v31.js"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/21-tabs-fix.v31.js"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/22-voice.v31.js"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/23-longpress.v31.js" data-mvs-id="mvs-route-card-longpress"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/24-startup-fix.v31.js" data-mvs-id="mvs-startup-activity-and-white-screen-fix"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/25-field-autogrow.v31.js" data-mvs-id="mvs-unified-field-autogrow"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/26-vpn-monitor.v31.js" data-mvs-id="mvs-vpn-monitor"></script>
+<script type="text/plain" data-mvs-defer data-src="./js/27-field-editor.v31.js" data-mvs-id="mvs-field-editor"></script>
+
+
+
+<!-- Модалка полноэкранного ввода «Причины не доставок» -->
+<div class="fullscreen-editor" id="reasonsFullscreen">
+  <div class="fe-header">
+    <button class="fe-btn fe-cancel" id="feCancel">Отмена</button>
+    <div class="fe-title">Причины не доставок</div>
+    <button class="fe-btn fe-save" id="feSave">Сохранить</button>
+  </div>
+  <div class="fe-chips" id="feChips"></div>
+  <textarea class="fe-textarea" id="feTextarea" 
+            placeholder="Введи причины не доставок..."></textarea>
+</div>
+
+
+<script id="mvs-liquid-splash-script">
+(function(){
+  function init(){
+    const splash=document.getElementById('mvsLiquidSplash');
+    if(!splash || splash.dataset.swipeReady==='1') return;
+    splash.dataset.swipeReady='1';
+    document.body.classList.add('mvs-splash-open');
+    const card=splash.querySelector('.mls-card');
+    try { const d=document.getElementById('mlsDate'); if(d) d.textContent=new Intl.DateTimeFormat('ru-RU',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).format(new Date()); } catch(e) {}
+    // приветствие по времени суток
+    try {
+      const hh=new Date().getHours(), t=document.getElementById('mlsTitle');
+      if(t) t.textContent = hh>=5&&hh<12 ? 'Доброе утро' : hh>=12&&hh<18 ? 'Добрый день' : hh>=18&&hh<23 ? 'Добрый вечер' : 'Доброй ночи';
+    } catch(e) {}
+    // числа появляются сразу, как только готовы данные, и плавно «досчитываются» от текущего значения
+    const reduceMotion = (()=>{ try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch(e) { return false; } })();
+    const fmt = v => v.toFixed(2).replace('.', ',');
+    function setNum(el, target){
+      if(!el) return;
+      const from = Number(el.dataset.v), to = target;
+      if(el.dataset.v!==undefined && from===to) return;
+      el.dataset.v = String(to);
+      cancelAnimationFrame(Number(el.dataset.raf)||0);
+      if(reduceMotion || (!isFinite(from) && to===0)){ el.textContent = fmt(to); return; }
+      const a = isFinite(from) ? from : 0, t0 = performance.now(), dur = 750;
+      (function step(now){
+        const k = Math.min(1,(now-t0)/dur), e = 1-Math.pow(1-k,3);
+        el.textContent = fmt(a+(to-a)*e);
+        if(k<1) el.dataset.raf = String(requestAnimationFrame(step));
+      })(t0);
+    }
+    function summary(){
+      let d=null; try { if(typeof window.mvsSplashSummary==='function') d=window.mvsSplashSummary(); } catch(e) {}
+      const box=document.getElementById('mlsNext'), l1=document.getElementById('mlsNext1'), l2=document.getElementById('mlsNext2');
+      if(!box||!d) return;
+      box.style.display='';
+      l1.textContent = d.l1; l2.textContent = d.l2;
+    }
+    function stats(){
+      if(typeof calcTotals1!=='function') return;           // данные ещё не готовы — оставляем «—»
+      let up=0, upFD=0;
+      try { const t=calcTotals1(); up=Number(t.up)||0; upFD=Number(t.upFD)||0; } catch(e) { return; }
+      setNum(document.getElementById('mlsDailyUP'), up);
+      setNum(document.getElementById('mlsDailyFD'), upFD);
+      summary();
+    }
+    stats();
+    let polls=0; const poll=setInterval(()=>{ if(!document.getElementById('mvsLiquidSplash')||++polls>60){ clearInterval(poll); return; } stats(); },150);   // ~9 с, потом хватит
+    setTimeout(()=>{try{if(window.map&&window.map.invalidateSize)window.map.invalidateSize(true)}catch(e){}},500);
+
+    const H=()=>window.innerHeight||800;
+    let closed=false, tracking=false, dragging=false, pid=null, startY=0, lastY=0, lastT=0, vel=0, dy=0, raf=0, armed=false;
+
+    // наклон телефона: круги и карточка слегка «едут» за наклоном (включается в меню «Настройки»)
+    (function(){
+      let on=false; try{ on = localStorage.getItem('mvs_splash_tilt')==='1'; }catch(e){}
+      if(!on || reduceMotion || !('DeviceOrientationEvent' in window)) return;
+      const clamp=v=>Math.max(-1,Math.min(1,v));
+      let b0=null,g0=null,tx=0,ty=0,cx=0,cy=0,r2=0;
+      function stop(){ window.removeEventListener('deviceorientation',onOri,true); }
+      function loop(){
+        r2=0;
+        if(closed||!document.getElementById('mvsLiquidSplash')){ stop(); return; }
+        if(document.hidden||splash.classList.contains('mls-lite')) return;
+        cx+=(tx-cx)*.14; cy+=(ty-cy)*.14;
+        splash.style.setProperty('--tx',cx.toFixed(3)); splash.style.setProperty('--ty',cy.toFixed(3));
+        if(Math.abs(tx-cx)>.003||Math.abs(ty-cy)>.003) r2=requestAnimationFrame(loop);
+      }
+      function onOri(e){
+        if(closed){ stop(); return; }
+        if(e.beta==null||e.gamma==null) return;
+        if(b0===null){ b0=e.beta; g0=e.gamma; }                   // за ноль берём положение телефона в момент показа
+        tx=clamp((e.gamma-g0)/22); ty=clamp((e.beta-b0)/22);
+        if(!r2) r2=requestAnimationFrame(loop);
+      }
+      window.addEventListener('deviceorientation',onOri,true);
+    })();
+
+    // анимации стоят, пока приложение свёрнуто
+    document.addEventListener('visibilitychange',()=>{ try{ splash.classList.toggle('mls-paused',document.hidden); }catch(e){} });
+    // на слабых устройствах отключаем «живой» фон: замеряем плавность спустя 1,2 с после показа
+    setTimeout(()=>{
+      if(closed||!document.getElementById('mvsLiquidSplash')) return;
+      let n=0,t0=0; const target=40;
+      (function f(ts){
+        if(closed||!document.getElementById('mvsLiquidSplash')) return;
+        if(!t0) t0=ts;
+        if(++n<target) return requestAnimationFrame(f);
+        const avg=(ts-t0)/(n-1);
+        if(avg>30){ splash.classList.add('mls-lite'); try{ document.documentElement.classList.add('mvs-lite'); }catch(e){} }     // < ~33 кадров/с: упрощаем и заставку, и стекло панели
+      })(performance.now());
+    },1200);
+
+    // Отрисовка кадра: стекло едет за пальцем 1:1, карточка внутри чуть отстаёт (параллакс)
+    function paint(){
+      raf=0;
+      const p=Math.min(1,Math.max(0,-dy/(H()*.85)));
+      splash.style.transform='translate3d(0,'+dy+'px,0)';
+      splash.style.opacity=String(1-p*.25);
+      const r=Math.round(p*44);
+      splash.style.borderRadius='0 0 '+r+'px '+r+'px';
+      if(card){ card.style.transform='translate3d(0,'+(dy*.16)+'px,0) scale('+(1-p*.06)+')'; card.style.opacity=String(1-p*.3); }
+    }
+    function schedule(){ if(!raf) raf=requestAnimationFrame(paint); }
+
+    // Подготовка анимации «подпрыгивания»: индекс для лесенки задержек
+    function prepareReveal(){
+      const groups=['#screen4 .route-stat','#screen4 .slot-btn','#screen4 .route-time-header','#screen4 .route-card','#bottomBar .bb-item'];
+      let i=0;
+      groups.forEach(sel=>document.querySelectorAll(sel).forEach(el=>{ el.style.setProperty('--rv',Math.min(i++,16)); }));
+    }
+    function buzz(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
+
+    function finish(){
+      try{splash.remove()}catch(e){}
+      document.body.classList.remove('mvs-splash-open');
+      document.body.style.overflow='';
+      // убрать класс после проигрыша анимации, чтобы будущие перерисовки не «подпрыгивали»
+      setTimeout(()=>document.body.classList.remove('mvs-reveal'),1900);
+    }
+    // Улетаем вверх с учётом скорости пальца, как экран блокировки iPhone
+    function dismiss(v){
+      if(closed) return; closed=true;
+      if(raf){cancelAnimationFrame(raf);raf=0;}
+      splash.classList.remove('mls-dragging');
+      const target=-(H()+60), dist=Math.abs(target-dy), speed=Math.max(.9,Math.abs(v||0));
+      const dur=Math.round(Math.min(680,Math.max(380,dist/speed)));
+      const ease='cubic-bezier(.22,.82,.28,1)';
+      splash.style.transition='transform '+dur+'ms '+ease+', opacity '+Math.round(dur*.6)+'ms ease-out '+Math.round(dur*.4)+'ms, border-radius '+dur+'ms '+ease;
+      if(card) card.style.transition='transform '+dur+'ms '+ease+', opacity '+dur+'ms ease-out';
+      prepareReveal();
+      document.body.classList.add('mvs-reveal');
+      buzz(8);
+      requestAnimationFrame(()=>{
+        splash.style.transform='translate3d(0,'+target+'px,0)';
+        splash.style.opacity='0';
+        splash.style.borderRadius='0 0 44px 44px';
+        if(card){ card.style.transform='translate3d(0,'+(target*.16)+'px,0) scale(.93)'; card.style.opacity='0'; }
+      });
+      let done=false; const fin=()=>{ if(done) return; done=true; finish(); };
+      splash.addEventListener('transitionend',ev=>{ if(ev.target===splash && ev.propertyName==='transform') fin(); });
+      setTimeout(fin,dur+120);
+    }
+    // Не дотянули — пружинно возвращаемся на место
+    function springBack(){
+      splash.classList.remove('mls-dragging');
+      const ease='cubic-bezier(.34,1.45,.5,1)';
+      splash.style.transition='transform 520ms '+ease+', opacity 300ms ease-out, border-radius 300ms ease-out';
+      if(card) card.style.transition='transform 520ms '+ease+', opacity 300ms ease-out';
+      dy=0;
+      splash.style.transform='translate3d(0,0,0)'; splash.style.opacity='1'; splash.style.borderRadius='0';
+      if(card){ card.style.transform='translate3d(0,0,0) scale(1)'; card.style.opacity='1'; }
+    }
+    const rubber=x=>60*(1-Math.exp(-x/120));   // вниз тянется с сопротивлением
+
+    function down(e){
+      if(closed) return;
+      if(e.pointerType==='mouse' && e.button!==0) return;
+      tracking=true; dragging=false; pid=e.pointerId; armed=false;
+      startY=lastY=e.clientY; lastT=e.timeStamp; vel=0;
+    }
+    function move(e){
+      if(!tracking||closed||e.pointerId!==pid) return;
+      const y=e.clientY, raw=y-startY;
+      if(!dragging){
+        if(Math.abs(raw)<7) return;
+        dragging=true;
+        splash.classList.add('mls-dragging');
+        splash.style.transition='none'; if(card) card.style.transition='none';
+        try{ splash.setPointerCapture(pid); }catch(_){}
+      }
+      const dt=e.timeStamp-lastT;
+      if(dt>0){ vel=vel*.6+((y-lastY)/dt)*.4; }
+      lastY=y; lastT=e.timeStamp;
+      dy = raw<0 ? raw : rubber(raw);
+      const pastNow = -dy > H()*.2;                    // «порог отпускания» пройден — лёгкий отклик
+      if(pastNow!==armed){ armed=pastNow; buzz(armed?12:5); }
+      schedule();
+      if(e.cancelable) e.preventDefault();
+    }
+    function up(e){
+      if(!tracking||e.pointerId!==pid) return;
+      tracking=false;
+      if(!dragging||closed) return;
+      dragging=false;
+      if(raf){cancelAnimationFrame(raf);raf=0;paint();}
+      if(-dy>H()*.2 || vel<-.45) dismiss(vel); else springBack();
+    }
+    splash.addEventListener('pointerdown',down);
+    splash.addEventListener('pointermove',move,{passive:false});
+    splash.addEventListener('pointerup',up);
+    splash.addEventListener('pointercancel',up);
+
+    const btn=document.getElementById('mlsOpenBtn');
+    if(btn) btn.addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); if(!dragging) dismiss(-1.1); });
+    splash.addEventListener('wheel',e=>{ if(e.deltaY>10) dismiss(-1.1); },{passive:true});
+    card&&card.addEventListener('dblclick',()=>dismiss(-1.1));
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+  setTimeout(init,900);
+})();
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- Targeted fix: preserve compact activity cards; only the text fields auto-grow. -->
+
+<!-- Targeted field-only fix: do not change compact/expanded card layout. -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script>
+// Загрузчик файлов приложения (js/*.js). Файлы скачиваются СРАЗУ (из кэша воркера это миллисекунды),
+// а запускаются, как и раньше, после первого кадра с заставкой — строго в том порядке, в каком идут заглушки ниже по странице.
+// Части с одинаковым data-mvs-join склеиваются в один скрипт (так главный скрипт работает ровно как раньше).
+(function(){
+  var ph=[].slice.call(document.querySelectorAll('script[data-mvs-defer]'));
+  function getText(u){
+    return new Promise(function(res,rej){
+      var n=0;
+      (function go(){
+        fetch(u).then(function(r){ if(!r.ok) throw new Error(u+' → '+r.status); return r.text(); })
+          .then(res,function(e){ if(++n<4) setTimeout(go,300*n*n); else rej(e); });
+      })();
+    });
+  }
+  var jobs=ph.map(function(el){ var u=el.getAttribute('data-src'); return u?getText(u):Promise.resolve(el.textContent); });
+  var all=Promise.all(jobs);
+  var ran=false;
+  function exec(texts){
+    window.__mvsRunning=true;
+    try{
+      var i=0;
+      while(i<ph.length){
+        var el=ph[i], key=el.getAttribute('data-mvs-join'), txt=texts[i], j=i+1;
+        if(key){ while(j<ph.length && ph[j].getAttribute('data-mvs-join')===key){ txt+='\n'+texts[j]; j++; } }
+        var n=document.createElement('script');
+        if(el.getAttribute('data-mvs-id')) n.id=el.getAttribute('data-mvs-id');
+        n.textContent=txt+'\n//# sourceURL=mvs/'+((el.getAttribute('data-src')||'inline').split('/').pop().replace(/\.v\d+\.js$/,'')+'.js');
+        el.parentNode.replaceChild(n,el);
+        for(var k=i+1;k<j;k++) ph[k].parentNode.removeChild(ph[k]);
+        i=j;
+      }
+    } finally { window.__mvsRunning=false; }
+  }
+  function fail(e){
+    window.__mvsLoadError=String((e&&e.message)||e);
+    try{
+      var d=document.createElement('div');
+      d.style.cssText='position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 90px);z-index:2147483000;padding:12px 14px;border-radius:14px;background:#c0392b;color:#fff;font:600 14px system-ui,sans-serif;text-align:center';
+      d.textContent='Не удалось загрузить файлы приложения. Проверь интернет — страница перезапустится.';
+      document.body.appendChild(d);
+      if(!sessionStorage.getItem('mvs_load_retry')){ sessionStorage.setItem('mvs_load_retry','1'); setTimeout(function(){ location.reload(); },3500); }
+    }catch(x){}
+  }
+  function run(){ if(ran) return; ran=true; all.then(exec,fail); }
+  function go(){
+    requestAnimationFrame(function(){ setTimeout(run,0); });   // сначала кадр с заставкой, потом тяжёлая инициализация
+    setTimeout(run,700);                                       // страховка, если кадры не идут (приложение в фоне)
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',go,{once:true}); else go();
+})();
+</script>
+<style id="mvs-workday-css">
+/* быстрые причины */
+.mvs-fe-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;max-height:40vh;overflow-y:auto}
+.fe-chips{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;flex-shrink:0;max-height:45vh;overflow-y:auto}
+.mvs-chip{border:1px solid #cbd5e1;background:rgba(148,163,184,.14);color:inherit;border-radius:16px;padding:6px 11px;font:inherit;font-size:13px;font-weight:600;line-height:1.2;cursor:pointer;-webkit-appearance:none;appearance:none}
+.mvs-chip:active{transform:scale(.96);background:rgba(52,152,219,.22)}
+.mvs-acc-toggle{flex:1 0 100%;text-align:left;border:0;background:transparent;color:inherit;font:inherit;font-size:13px;font-weight:800;padding:6px 2px;opacity:.85;cursor:pointer;-webkit-appearance:none;appearance:none}
+.mvs-acc-list{flex:1 0 100%;display:none;flex-direction:column;gap:6px}
+.mvs-acc-list.open{display:flex}
+.mvs-reason-row{text-align:left;border:1px solid #cbd5e1;background:rgba(148,163,184,.10);color:inherit;border-radius:12px;padding:10px 12px;font:inherit;font-size:14px;font-weight:600;line-height:1.25;cursor:pointer;-webkit-appearance:none;appearance:none}
+.mvs-reason-row:active{transform:scale(.98);background:rgba(52,152,219,.22)}
+/* подсказка «следующая встреча» */
+.mvs-next-hint{margin:8px 0 2px;padding:9px 12px;border-radius:14px;background:rgba(52,152,219,.10);border:1px solid rgba(52,152,219,.28);color:inherit}
+.mvs-next-hint .nh1{font-size:14px;font-weight:800;line-height:1.25;overflow-wrap:anywhere}
+.mvs-next-hint .nh2{font-size:12px;opacity:.82;margin-top:2px;line-height:1.3}
+.mvs-next-hint.warn{background:rgba(230,126,34,.14);border-color:rgba(230,126,34,.5)}
+.mvs-next-hint.warn .nh2{opacity:1;font-weight:700;color:#c0670f}
+body.dark .mvs-next-hint.warn .nh2{color:#ffb366}
+/* порядок по карте */
+.mvs-route-btn{border:1px solid rgba(255,255,255,.65);background:rgba(255,255,255,.22);color:#fff;border-radius:14px;padding:3px 10px;margin-right:8px;font:inherit;font-size:12px;font-weight:800;cursor:pointer;-webkit-appearance:none;appearance:none}
+.mvs-route-btn:active{transform:scale(.96)}
+.mvs-ro-backdrop{position:fixed;inset:0;z-index:4000;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(0,0,0,.6)}
+.mvs-ro-modal{width:min(520px,100%);max-height:86dvh;overflow:auto;box-sizing:border-box;background:var(--card-bg,#fff);color:var(--text-color,#1e293b);border-radius:20px;padding:18px;box-shadow:0 20px 70px #0005}
+body.dark .mvs-ro-modal{background:#1c2733;color:#e8eef5}
+.mvs-ro-modal h3{margin:0 0 8px;font-size:18px}
+.mvs-ro-sum{font-size:13px;margin-bottom:10px;line-height:1.4}
+.mvs-ro-sum b{font-weight:800}
+.mvs-ro-list{list-style:none;margin:0 0 12px;padding:0}
+.mvs-ro-list li{display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:1px solid rgba(120,130,140,.2);font-size:14px;line-height:1.3}
+.mvs-ro-list .n{flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:#27ae60;color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.mvs-ro-list .km{margin-left:auto;flex:0 0 auto;font-size:12px;opacity:.7;white-space:nowrap}
+.mvs-ro-note{font-size:12px;opacity:.75;margin-bottom:10px}
+.mvs-ro-actions{display:flex;gap:8px}
+.mvs-ro-actions button{flex:1;border:1px solid #cbd5e1;border-radius:10px;padding:11px 12px;background:transparent;color:inherit;font:inherit;font-weight:700;cursor:pointer}
+.mvs-ro-actions button.primary{background:#27ae60;border-color:#27ae60;color:#fff}
+</style>
+
+<style id="mvs-card-sheet-css">
+#mvsCardSheet{position:fixed;inset:0;z-index:1500;pointer-events:none}
+#mvsCardSheet.open{pointer-events:auto}
+#mvsCardSheet .mvs-sheet-dim{position:absolute;inset:0;background:#000;opacity:0;transition:opacity .32s ease}
+#mvsCardSheet.open .mvs-sheet-dim{opacity:.34}
+#mvsCardSheet .mvs-sheet-panel{position:absolute;top:0;right:0;bottom:0;width:calc(100% - 18px);max-width:560px;box-sizing:border-box;display:flex;flex-direction:column;background:#eef3f8;color:#1e293b;border-radius:22px 0 0 22px;box-shadow:-12px 0 40px rgba(0,0,0,.35);transform:translate3d(100%,0,0);transition:transform .34s cubic-bezier(.22,.9,.28,1);will-change:transform;touch-action:pan-y;overflow:hidden}
+#mvsCardSheet.open .mvs-sheet-panel{transform:translate3d(0,0,0)}
+body.dark #mvsCardSheet .mvs-sheet-panel{background:#121a22;color:#e8eef5}
+#mvsCardSheet .mvs-sheet-bar{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:calc(env(safe-area-inset-top,0px) + 8px) 12px 6px 6px}
+#mvsCardSheet .mvs-sheet-back{flex:0 0 auto;width:44px;height:44px;border:0;border-radius:14px;background:transparent;color:inherit;font-size:34px;line-height:1;font-weight:300;cursor:pointer;-webkit-appearance:none;appearance:none;-webkit-tap-highlight-color:transparent}
+#mvsCardSheet .mvs-sheet-back:active{background:rgba(120,130,150,.22)}
+#mvsCardSheet .mvs-sheet-title{flex:1;min-width:0;font-size:15px;font-weight:800;letter-spacing:.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#mvsCardSheet .mvs-sheet-grip{flex:0 0 auto;width:4px;height:34px;border-radius:3px;background:rgba(120,130,150,.45);margin-right:4px}
+#mvsCardSheet .mvs-sheet-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:4px 10px calc(env(safe-area-inset-bottom,0px) + 28px)}
+#mvsCardSheet #mvsSheetBody .route-time-block,#mvsCardSheet #mvsSheetBody .route-time-body,
+body.dark #mvsCardSheet #mvsSheetBody .route-time-block,body.dark #mvsCardSheet #mvsSheetBody .route-time-body{margin:0 !important;padding:0 !important;background:none !important;border:0 !important;box-shadow:none !important;-webkit-backdrop-filter:none !important;backdrop-filter:none !important}
+@media (prefers-reduced-motion:reduce){#mvsCardSheet .mvs-sheet-panel,#mvsCardSheet .mvs-sheet-dim{transition-duration:.01s}}
+/* ── «жидкое стекло» ── */
+@keyframes mvsSheetBlobA{0%{transform:translate3d(0,0,0) scale(1)}100%{transform:translate3d(36px,28px,0) scale(1.12)}}
+@keyframes mvsSheetBlobB{0%{transform:translate3d(0,0,0) scale(1)}100%{transform:translate3d(-34px,-26px,0) scale(1.14)}}
+#mvsCardSheet .mvs-sheet-panel{
+  background:linear-gradient(155deg,rgba(255,255,255,.8) 0%,rgba(226,246,237,.6) 48%,rgba(212,234,250,.52) 100%);
+  -webkit-backdrop-filter:blur(26px) saturate(1.7);backdrop-filter:blur(26px) saturate(1.7);
+  border:1px solid rgba(255,255,255,.78);border-right:0;
+  box-shadow:-14px 0 44px rgba(10,30,50,.28),inset 1px 1px 0 rgba(255,255,255,.95),inset 0 0 44px rgba(255,255,255,.28)}
+body.dark #mvsCardSheet .mvs-sheet-panel{
+  background:linear-gradient(155deg,rgba(62,88,112,.56) 0%,rgba(18,30,42,.64) 55%,rgba(22,52,60,.56) 100%);
+  border:1px solid rgba(255,255,255,.17);border-right:0;
+  box-shadow:-14px 0 44px rgba(0,0,0,.55),inset 1px 1px 0 rgba(255,255,255,.24),inset 0 0 44px rgba(120,200,255,.06)}
+#mvsCardSheet .mvs-sheet-panel::before,#mvsCardSheet .mvs-sheet-panel::after{content:"";position:absolute;border-radius:50%;pointer-events:none;z-index:0;will-change:transform}
+#mvsCardSheet .mvs-sheet-panel::before{width:320px;height:320px;left:-100px;top:-80px;background:radial-gradient(circle at 38% 38%,rgba(46,204,113,.6),rgba(46,204,113,0) 68%);animation:mvsSheetBlobA 12s ease-in-out infinite alternate}
+#mvsCardSheet .mvs-sheet-panel::after{width:340px;height:340px;right:-120px;bottom:-100px;background:radial-gradient(circle at 60% 60%,rgba(52,152,219,.55),rgba(52,152,219,0) 68%);animation:mvsSheetBlobB 14s ease-in-out infinite alternate}
+body.dark #mvsCardSheet .mvs-sheet-panel::before{background:radial-gradient(circle at 38% 38%,rgba(46,204,113,.36),rgba(46,204,113,0) 68%)}
+body.dark #mvsCardSheet .mvs-sheet-panel::after{background:radial-gradient(circle at 60% 60%,rgba(52,152,219,.34),rgba(52,152,219,0) 68%)}
+#mvsCardSheet .mvs-sheet-bar,#mvsCardSheet .mvs-sheet-scroll{position:relative;z-index:1}
+#mvsCardSheet #mvsSheetBody .route-time-body .route-card{
+  background:linear-gradient(160deg,rgba(255,255,255,.66),rgba(255,255,255,.34)) !important;
+  box-shadow:0 10px 28px rgba(20,40,60,.14),inset 0 1px 0 rgba(255,255,255,.95) !important}
+body.dark #mvsCardSheet #mvsSheetBody .route-time-body .route-card{
+  background:linear-gradient(160deg,rgba(255,255,255,.12),rgba(255,255,255,.04)) !important;
+  box-shadow:0 10px 28px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.22) !important}
+#mvsCardSheet #mvsSheetBody .route-time-body .route-card.route-card-live,
+body.dark #mvsCardSheet #mvsSheetBody .route-time-body .route-card.route-card-live{
+  background:linear-gradient(160deg,rgba(39,174,96,.30),rgba(39,174,96,.10)) !important}
+/* слабые телефоны / «уменьшить движение»: без размытия и без плывущих пятен */
+html.mvs-lite #mvsCardSheet .mvs-sheet-panel{-webkit-backdrop-filter:none;backdrop-filter:none;background:#eef3f8}
+html.mvs-lite body.dark #mvsCardSheet .mvs-sheet-panel,body.dark html.mvs-lite #mvsCardSheet .mvs-sheet-panel{background:#121a22}
+html.mvs-lite #mvsCardSheet .mvs-sheet-panel::before,html.mvs-lite #mvsCardSheet .mvs-sheet-panel::after{animation:none}
+#mvsCardSheet .mvs-sheet-panel.dragging::before,#mvsCardSheet .mvs-sheet-panel.dragging::after{animation-play-state:paused}
+@media (prefers-reduced-motion:reduce){#mvsCardSheet .mvs-sheet-panel::before,#mvsCardSheet .mvs-sheet-panel::after{animation:none}}
+</style>
+
+
+</body>
+</html>
+stener;<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
